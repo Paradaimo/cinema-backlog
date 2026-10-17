@@ -66,7 +66,6 @@ class AppContainer(context: Context) {
 
     val catalogRepository = CatalogRepository(
         kp = kpRetrofit.create(com.cb.backlog.data.api.KpApi::class.java),
-        kpToken = BuildConfig.KP_TOKEN,
         jikan = jikanRetrofit.create(JikanApi::class.java),
     )
 }

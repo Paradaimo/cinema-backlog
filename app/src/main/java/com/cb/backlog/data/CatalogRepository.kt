@@ -7,12 +7,11 @@ import kotlinx.serialization.json.Json
 
 class CatalogRepository(
     private val kp: KpApi,
-    private val kpToken: String,
     private val jikan: JikanApi,
 ) {
 
     suspend fun searchMoviesAndShows(query: String): List<MediaInfo> =
-        kp.search(query, token = kpToken).docs
+        kp.search(query).docs
             .map { it.toMediaInfo() }
 
     suspend fun searchAnime(query: String): List<MediaInfo> =
@@ -27,7 +26,7 @@ class CatalogRepository(
         }
 
     private suspend fun loadKpDetails(id: Long): MediaInfo =
-        kp.movieDetails(id, token = kpToken).toMediaInfo()
+        kp.movieDetails(id).toMediaInfo()
 
     companion object {
         const val SOURCE_KP = "kinopoisk"

@@ -1,9 +1,8 @@
-package com.cb.backlog.data.api
+﻿package com.cb.backlog.data.api
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import retrofit2.http.GET
-import retrofit2.http.Header
 import retrofit2.http.Path
 import retrofit2.http.Query
 
@@ -56,12 +55,9 @@ interface KpApi {
         @Query("query") query: String,
         @Query("limit") limit: Int = 20,
         @Query("page") page: Int = 1,
-        @Header("X-API-KEY") token: String,
     ): KpSearchResponse
 
     @GET("v1.4/movie/{id}")
-    suspend fun movieDetails(
-        @Path("id") id: Long,
-        @Header("X-API-KEY") token: String,
-    ): KpMovie
+    suspend fun movieDetails(@Path("id") id: Long): KpMovie
 }
+

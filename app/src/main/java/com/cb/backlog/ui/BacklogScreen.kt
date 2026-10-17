@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
@@ -147,18 +148,20 @@ fun BacklogScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            Row(
+            LazyRow(
                 Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FilterChip(
-                    selected = statusFilter == null,
-                    onClick = { viewModel.statusFilter.value = null },
-                    label = { Text("Все") },
-                )
-                WatchStatus.entries.forEach { status ->
+                item {
+                    FilterChip(
+                        selected = statusFilter == null,
+                        onClick = { viewModel.statusFilter.value = null },
+                        label = { Text("Все") },
+                    )
+                }
+                items(WatchStatus.entries.toList()) { status ->
                     FilterChip(
                         selected = statusFilter == status,
                         onClick = {
@@ -267,3 +270,4 @@ private fun BacklogItemRow(item: ListItem, onClick: () -> Unit) {
         }
     }
 }
+
