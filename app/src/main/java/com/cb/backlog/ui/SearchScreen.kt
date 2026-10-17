@@ -1,6 +1,7 @@
-package com.cb.backlog.ui
+﻿package com.cb.backlog.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,6 +18,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -30,6 +33,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -45,6 +49,7 @@ import androidx.lifecycle.viewModelScope
 import com.cb.backlog.data.CatalogRepository
 import com.cb.backlog.data.MediaInfo
 import com.cb.backlog.data.SupabaseRepo
+import com.cb.backlog.data.WatchStatus
 import com.cb.backlog.di.AppContainer
 import com.cb.backlog.ui.components.PosterThumb
 import com.cb.backlog.ui.components.TypeBadge
@@ -125,7 +130,7 @@ class SearchViewModel(
         )
     }
 
-    fun add(info: MediaInfo) {
+    fun add(info: MediaInfo, status: WatchStatus? = null) {
         viewModelScope.launch {
             error.value = null
             runCatching {
@@ -134,10 +139,10 @@ class SearchViewModel(
                 } else {
                     info
                 }
-                supabase.addItem(full)
+                supabase.addItem(full, status)
             }.fold(
                 onSuccess = {
-                    addedTitle.value = info.title
+                    addedTitle.value = (status?.let { "${it.label}: " } ?: "") + info.title
                     results.value = results.value - info
                 },
                 onFailure = { e ->
@@ -217,7 +222,7 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
                     items(results, key = { it.source + it.externalId }) { info ->
                         SearchResultRow(
                             info = info,
-                            onAdd = { viewModel.add(info) },
+                            onAdd = { s -> viewModel.add(info, s) },
                             onOpen = { viewModel.openPreview(info) },
                         )
                     }
@@ -232,7 +237,7 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
         PreviewDialog(
             info = info,
             loading = previewLoading,
-            onAdd = { viewModel.add(info); viewModel.preview.value = null },
+            onAdd = { status -> viewModel.add(info, status); viewModel.preview.value = null },
             onDismiss = { viewModel.preview.value = null },
         )
     }
@@ -242,7 +247,7 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
 private fun PreviewDialog(
     info: MediaInfo,
     loading: Boolean,
-    onAdd: () -> Unit,
+    onAdd: (WatchStatus?) -> Unit,
     onDismiss: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -299,7 +304,7 @@ private fun PreviewDialog(
                 Spacer(Modifier.height(12.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     TextButton(onClick = onDismiss) { Text("Закрыть") }
-                    TextButton(onClick = onAdd) { Text("В бэклог") }
+                    StatusAddMenu(onPick = onAdd)
                 }
             }
         }
@@ -307,7 +312,27 @@ private fun PreviewDialog(
 }
 
 @Composable
-private fun SearchResultRow(info: MediaInfo, onAdd: () -> Unit, onOpen: () -> Unit) {
+private fun StatusAddMenu(onPick: (WatchStatus?) -> Unit) {
+    var menuOpen by remember { mutableStateOf(false) }
+    Box {
+        TextButton(onClick = { menuOpen = true }) { Text("В бэклог ▾") }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            WatchStatus.entries.forEach { status ->
+                DropdownMenuItem(
+                    text = { Text(status.label) },
+                    onClick = { menuOpen = false; onPick(status) },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text("Без метки") },
+                onClick = { menuOpen = false; onPick(null) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun SearchResultRow(info: MediaInfo, onAdd: (WatchStatus?) -> Unit, onOpen: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -329,6 +354,8 @@ private fun SearchResultRow(info: MediaInfo, onAdd: () -> Unit, onOpen: () -> Un
                 info.year?.let { Text("$it", style = MaterialTheme.typography.labelSmall) }
             }
         }
-        TextButton(onClick = onAdd) { Text("В бэклог") }
+        StatusAddMenu(onPick = onAdd)
     }
 }
+
+

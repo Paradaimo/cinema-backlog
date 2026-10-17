@@ -118,8 +118,9 @@ class SupabaseRepo(private val client: SupabaseClient) {
         )
     }
 
-    suspend fun addItem(info: MediaInfo) {
+    suspend fun addItem(info: MediaInfo, status: WatchStatus? = null) {
         val membership = myMembership() ?: error("Нет списка")
+        val uid = currentUserId() ?: error("Не авторизован")
         client.from("items").insert(
             NewItemRow(
                 listId = membership.listId,
@@ -132,9 +133,24 @@ class SupabaseRepo(private val client: SupabaseClient) {
                 year = info.year,
                 director = info.director,
                 castJson = CatalogRepository.castToJson(info.cast),
-                addedBy = currentUserId() ?: error("Не авторизован"),
+                addedBy = uid,
             )
         )
+        if (status != null) {
+            val inserted = client.from("items")
+                .select {
+                    filter {
+                        eq("list_id", membership.listId)
+                        eq("source", info.source)
+                        eq("external_id", info.externalId)
+                    }
+                }
+                .decodeList<ItemRow>()
+            val itemId = inserted.firstOrNull()?.id ?: error("Элемент не найден после вставки")
+            client.from("item_status").upsert(
+                NewStatusRow(itemId, membership.listId, uid, status.name)
+            )
+        }
     }
 
     suspend fun setStatus(itemId: String, status: WatchStatus?) {

@@ -14,3 +14,5 @@ local.properties.example.bak
 *.dex
 
 google-mirror/
+
+tools/
