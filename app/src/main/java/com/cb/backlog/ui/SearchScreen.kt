@@ -1,5 +1,6 @@
 package com.cb.backlog.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -34,7 +36,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
@@ -65,8 +69,23 @@ class SearchViewModel(
     val searching = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
     val addedTitle = MutableStateFlow<String?>(null)
+    val preview = MutableStateFlow<MediaInfo?>(null)
+    val previewLoading = MutableStateFlow(false)
 
     private var searchJob: Job? = null
+
+    fun openPreview(info: MediaInfo) {
+        preview.value = info
+        if (info.director == null || info.cast.isEmpty()) {
+            viewModelScope.launch {
+                previewLoading.value = true
+                runCatching { catalog.loadDetails(info.source, info.externalId, info.type) }
+                    .onSuccess { if (preview.value?.externalId == info.externalId) preview.value = it }
+                    .onFailure { /* показываем что есть */ }
+                previewLoading.value = false
+            }
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -196,8 +215,91 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
             } else {
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(results, key = { it.source + it.externalId }) { info ->
-                        SearchResultRow(info = info, onAdd = { viewModel.add(info) })
+                        SearchResultRow(
+                            info = info,
+                            onAdd = { viewModel.add(info) },
+                            onOpen = { viewModel.openPreview(info) },
+                        )
                     }
+                }
+            }
+        }
+    }
+
+    val preview by viewModel.preview.collectAsStateWithLifecycle()
+    val previewLoading by viewModel.previewLoading.collectAsStateWithLifecycle()
+    preview?.let { info ->
+        PreviewDialog(
+            info = info,
+            loading = previewLoading,
+            onAdd = { viewModel.add(info); viewModel.preview.value = null },
+            onDismiss = { viewModel.preview.value = null },
+        )
+    }
+}
+
+@Composable
+private fun PreviewDialog(
+    info: MediaInfo,
+    loading: Boolean,
+    onAdd: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surface,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(16.dp)) {
+                Row {
+                    PosterThumb(
+                        url = info.posterUrl,
+                        modifier = Modifier
+                            .width(110.dp)
+                            .height(165.dp),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(info.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(4.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            TypeBadge(info.type)
+                            info.year?.let { Text("$it", style = MaterialTheme.typography.labelSmall) }
+                        }
+                        if (loading) {
+                            Spacer(Modifier.height(8.dp))
+                            CircularProgressIndicator(Modifier.width(20.dp))
+                        }
+                        info.director?.let {
+                            Spacer(Modifier.height(6.dp))
+                            Text("Реж.: $it", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+                info.synopsis?.let {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        it,
+                        style = MaterialTheme.typography.bodySmall,
+                        maxLines = 6,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                if (info.cast.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "В ролях: ${info.cast.joinToString(", ")}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Закрыть") }
+                    TextButton(onClick = onAdd) { Text("В бэклог") }
                 }
             }
         }
@@ -205,10 +307,11 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SearchResultRow(info: MediaInfo, onAdd: () -> Unit) {
+private fun SearchResultRow(info: MediaInfo, onAdd: () -> Unit, onOpen: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .clickable(onClick = onOpen)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

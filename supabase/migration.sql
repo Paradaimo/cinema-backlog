@@ -24,7 +24,7 @@ create table if not exists public.members (
 create table if not exists public.items (
     id          uuid primary key default gen_random_uuid(),
     list_id     uuid not null references public.lists (id) on delete cascade,
-    source      text not null check (source in ('tmdb', 'jikan')),
+    source      text not null check (source in ('kinopoisk', 'tmdb', 'jikan')),
     external_id text not null,
     type        text not null check (type in ('MOVIE', 'TV', 'ANIME')),
     title       text not null,
