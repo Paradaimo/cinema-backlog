@@ -1,0 +1,6 @@
+# Это пример. Скопируйте в local.properties (не коммитится!) и заполните.
+# Supabase: Settings -> API
+supabase.url=https://YOUR_PROJECT.supabase.co
+supabase.anonKey=YOUR_ANON_KEY
+# TMDB: https://www.themoviedb.org/settings/api
+tmdb.apiKey=YOUR_TMDB_API_KEY

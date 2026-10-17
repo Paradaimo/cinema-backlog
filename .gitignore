@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+local.properties.example.bak
+*.apk
+*.aab
+*.ap_
+*.dex
+
+google-mirror/
