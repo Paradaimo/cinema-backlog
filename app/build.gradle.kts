@@ -23,8 +23,8 @@ android {
         applicationId = "com.cb.backlog"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.2.4"
+        versionCode = 7
+        versionName = "0.3.0"
 
         buildConfigField("String", "SUPABASE_URL", "\"${prop("supabase.url")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${prop("supabase.anonKey")}\"")
@@ -93,6 +93,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
 }
+
 
 
 

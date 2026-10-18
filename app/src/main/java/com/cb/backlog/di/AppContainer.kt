@@ -20,6 +20,9 @@ import java.util.concurrent.TimeUnit
 
 class AppContainer(context: Context) {
 
+    val prefs: android.content.SharedPreferences =
+        context.getSharedPreferences("cb_prefs", Context.MODE_PRIVATE)
+
     val json: Json = Json {
         ignoreUnknownKeys = true
         explicitNulls = false

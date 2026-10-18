@@ -1,7 +1,9 @@
 ﻿package com.cb.backlog.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,11 +19,13 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -30,6 +34,7 @@ import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -42,7 +47,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -66,31 +73,86 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-class BacklogViewModel(private val repo: SupabaseRepo) : ViewModel() {
+class BacklogViewModel(
+    private val repo: SupabaseRepo,
+    private val prefs: android.content.SharedPreferences,
+) : ViewModel() {
 
     val data = MutableStateFlow<BacklogData?>(null)
     val loading = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
     val statusFilter = MutableStateFlow<WatchStatus?>(null)
+    val lists = MutableStateFlow<List<SupabaseRepo.MyList>>(emptyList())
+    val currentListId = MutableStateFlow<String?>(null)
 
     init {
         viewModelScope.launch {
             repo.backlogChanges().collect { reload() }
         }
+        refreshLists()
+    }
+
+    fun refreshLists() {
+        viewModelScope.launch {
+            runCatching { repo.myLists() }
+                .onSuccess { result ->
+                    lists.value = result
+                    val saved = prefs.getString("current_list_id", null)
+                    val target = result.firstOrNull { it.listId == saved }?.listId
+                        ?: result.firstOrNull()?.listId
+                    if (target != null && target != currentListId.value) switchList(target)
+                }
+                .onFailure { e -> error.value = e.message }
+        }
+    }
+
+    fun switchList(listId: String) {
+        currentListId.value = listId
+        prefs.edit().putString("current_list_id", listId).apply()
         reload()
     }
 
     fun reload() {
+        val listId = currentListId.value ?: return
         viewModelScope.launch {
             loading.value = data.value == null
             error.value = null
             runCatching {
-                val membership = repo.myMembership() ?: return@launch
-                data.value = repo.fetchBacklog(membership.listId)
+                data.value = repo.fetchBacklog(listId)
             }.fold(
                 onSuccess = { loading.value = false },
                 onFailure = { e -> loading.value = false; error.value = e.message },
             )
+        }
+    }
+
+    fun createList(name: String, displayName: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            error.value = null
+            runCatching { repo.createList(name.trim(), displayName.trim()) }
+                .fold(
+                    onSuccess = { row ->
+                        refreshLists()
+                        switchList(row.id)
+                        onDone()
+                    },
+                    onFailure = { e -> error.value = e.message },
+                )
+        }
+    }
+
+    fun joinList(code: String, displayName: String, onDone: () -> Unit = {}) {
+        viewModelScope.launch {
+            error.value = null
+            runCatching { repo.joinList(code.trim().uppercase(), displayName.trim()) }
+                .fold(
+                    onSuccess = { row ->
+                        refreshLists()
+                        switchList(row.id)
+                        onDone()
+                    },
+                    onFailure = { e -> error.value = "Не удалось присоединиться. Проверьте код." },
+                )
         }
     }
 
@@ -118,29 +180,53 @@ fun BacklogScreen(
     onSignOut: () -> Unit,
 ) {
     val viewModel: BacklogViewModel = androidx.lifecycle.viewmodel.compose.viewModel {
-        BacklogViewModel(container.supabaseRepo)
+        BacklogViewModel(container.supabaseRepo, container.prefs)
     }
     val data by viewModel.data.collectAsStateWithLifecycle()
     val loading by viewModel.loading.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val statusFilter by viewModel.statusFilter.collectAsStateWithLifecycle()
+    val lists by viewModel.lists.collectAsStateWithLifecycle()
+    val currentListId by viewModel.currentListId.collectAsStateWithLifecycle()
 
     LaunchedEffect(Unit) { viewModel.reload() }
 
     val context = LocalContext.current
     var viewMode by remember { mutableStateOf(ViewModeStore.load(context, "backlog")) }
 
+    var listMenuOpen by remember { mutableStateOf(false) }
+    val clipboard = LocalClipboardManager.current
+    val currentList = lists.firstOrNull { it.listId == currentListId }
+    val inviteCode = data?.listRow?.inviteCode
+
+    var createDialog by remember { mutableStateOf(false) }
+    var joinDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = {
                     Column {
-                        Text(data?.listRow?.name ?: "Бэклог")
-                        data?.listRow?.let {
-                            Text(
-                                "Код: ${it.inviteCode}",
-                                style = MaterialTheme.typography.labelSmall,
-                            )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { listMenuOpen = true },
+                        ) {
+                            Text(data?.listRow?.name ?: "Бэклог")
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = "Сменить список")
+                        }
+                        inviteCode?.let { code ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Код: $code",
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                                IconButton(onClick = {
+                                    clipboard.setText(AnnotatedString(code))
+                                    android.widget.Toast.makeText(context, "Код скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                                }) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Копировать код", modifier = Modifier.height(16.dp))
+                                }
+                            }
                         }
                     }
                 },
@@ -162,6 +248,31 @@ fun BacklogScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            DropdownMenu(expanded = listMenuOpen, onDismissRequest = { listMenuOpen = false }) {
+                lists.forEach { list ->
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                (list.lists?.name ?: "Список") +
+                                    if (list.listId == currentListId) "  ✓" else "",
+                            )
+                        },
+                        onClick = {
+                            listMenuOpen = false
+                            viewModel.switchList(list.listId)
+                        },
+                    )
+                }
+                DropdownMenuItem(
+                    text = { Text("Создать список…") },
+                    onClick = { listMenuOpen = false; createDialog = true },
+                )
+                DropdownMenuItem(
+                    text = { Text("Вступить по коду…") },
+                    onClick = { listMenuOpen = false; joinDialog = true },
+                )
+            }
+
             LazyRow(
                 Modifier
                     .fillMaxWidth()
@@ -196,6 +307,21 @@ fun BacklogScreen(
             Spacer(Modifier.height(4.dp))
 
             when {
+                currentListId == null && !loading -> {
+                    Column(
+                        Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center,
+                    ) {
+                        Text("У вас пока нет ни одного списка")
+                        Spacer(Modifier.height(12.dp))
+                        TextButton(onClick = { createDialog = true }) { Text("Создать список") }
+                        TextButton(onClick = { joinDialog = true }) { Text("Вступить по коду") }
+                    }
+                }
+
                 loading -> {
                     Row(
                         Modifier.fillMaxSize(), horizontalArrangement = Arrangement.Center
@@ -276,7 +402,21 @@ fun BacklogScreen(
             }
         }
     }
+
+    if (createDialog) {
+        CreateListDialog(
+            onDismiss = { createDialog = false },
+            onCreate = { name, displayName -> viewModel.createList(name, displayName) },
+        )
+    }
+    if (joinDialog) {
+        JoinListDialog(
+            onDismiss = { joinDialog = false },
+            onJoin = { code, displayName -> viewModel.joinList(code, displayName) },
+        )
+    }
 }
+
 
 @Composable
 private fun BacklogItemRow(item: ListItem, onClick: () -> Unit) {
@@ -323,6 +463,72 @@ private fun BacklogItemRow(item: ListItem, onClick: () -> Unit) {
             Text("Подробнее")
         }
     }
+}
+
+@Composable
+private fun CreateListDialog(
+    onDismiss: () -> Unit,
+    onCreate: (name: String, displayName: String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Новый список") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Название списка") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Ваше имя в этом списке") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onCreate(name, displayName); onDismiss() }) { Text("Создать") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
+}
+
+@Composable
+private fun JoinListDialog(
+    onDismiss: () -> Unit,
+    onJoin: (code: String, displayName: String) -> Unit,
+) {
+    var code by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Вступить по коду") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = code,
+                    onValueChange = { code = it },
+                    label = { Text("Код приглашения") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Ваше имя в этом списке") },
+                    singleLine = true,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onJoin(code, displayName); onDismiss() }) { Text("Вступить") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } },
+    )
 }
 
 

@@ -62,7 +62,23 @@ class SupabaseRepo(private val client: SupabaseClient) {
         val uid = currentUserId() ?: return null
         return client.from("members")
             .select { filter { eq("user_id", uid) } }
-            .decodeSingleOrNull()
+            .decodeList<MemberRow>()
+            .firstOrNull()
+    }
+
+    @kotlinx.serialization.Serializable
+    data class MyList(
+        @kotlinx.serialization.SerialName("list_id") val listId: String,
+        @kotlinx.serialization.SerialName("display_name") val displayName: String,
+        val lists: ListRow? = null,
+    )
+
+    suspend fun myLists(): List<MyList> {
+        val uid = currentUserId() ?: return emptyList()
+        return client.from("members")
+            .select(columns = io.github.jan.supabase.postgrest.query.Columns.raw("list_id, display_name, lists(*)"))
+            { filter { eq("user_id", uid) } }
+            .decodeList<MyList>()
     }
 
     suspend fun fetchBacklog(listId: String): BacklogData {
