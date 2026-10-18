@@ -1,4 +1,4 @@
-package com.cb.backlog.ui
+﻿package com.cb.backlog.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -10,9 +10,14 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
@@ -37,6 +42,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -48,9 +54,14 @@ import com.cb.backlog.data.MediaType
 import com.cb.backlog.data.SupabaseRepo
 import com.cb.backlog.data.WatchStatus
 import com.cb.backlog.di.AppContainer
+import com.cb.backlog.ui.components.GridPosterCard
+import com.cb.backlog.ui.components.MediaTitleRow
 import com.cb.backlog.ui.components.PosterThumb
 import com.cb.backlog.ui.components.StatusLabel
 import com.cb.backlog.ui.components.TypeBadge
+import com.cb.backlog.ui.components.ViewMode
+import com.cb.backlog.ui.components.ViewModePicker
+import com.cb.backlog.ui.components.ViewModeStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -116,6 +127,9 @@ fun BacklogScreen(
 
     LaunchedEffect(Unit) { viewModel.reload() }
 
+    val context = LocalContext.current
+    var viewMode by remember { mutableStateOf(ViewModeStore.load(context, "backlog")) }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -173,6 +187,14 @@ fun BacklogScreen(
                 }
             }
 
+            Spacer(Modifier.height(4.dp))
+            ViewModePicker(
+                current = viewMode,
+                onChange = { viewMode = it; ViewModeStore.save(context, "backlog", it) },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            Spacer(Modifier.height(4.dp))
+
             when {
                 loading -> {
                     Row(
@@ -210,12 +232,44 @@ fun BacklogScreen(
                 else -> {
                     val items = data!!.items
                         .filter { statusFilter == null || it.myStatus == statusFilter }
-                    LazyColumn(state = rememberLazyListState()) {
-                        items(items, key = { it.item.id }) { item ->
-                            BacklogItemRow(
-                                item = item,
-                                onClick = { onOpenItem(item.item.id) },
-                            )
+                    when (viewMode) {
+                        ViewMode.TITLES -> LazyColumn(state = rememberLazyListState()) {
+                            items(items, key = { it.item.id }) { item ->
+                                MediaTitleRow(
+                                    title = item.item.title,
+                                    year = item.item.year,
+                                    status = item.myStatus,
+                                    onClick = { onOpenItem(item.item.id) },
+                                )
+                            }
+                        }
+
+                        ViewMode.LIST -> LazyColumn(state = rememberLazyListState()) {
+                            items(items, key = { it.item.id }) { item ->
+                                BacklogItemRow(
+                                    item = item,
+                                    onClick = { onOpenItem(item.item.id) },
+                                )
+                            }
+                        }
+
+                        ViewMode.GRID -> LazyVerticalGrid(
+                            columns = GridCells.Fixed(3),
+                            state = rememberLazyGridState(),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            gridItems(items, key = { it.item.id }) { item ->
+                                GridPosterCard(
+                                    title = item.item.title,
+                                    posterUrl = item.item.posterUrl,
+                                    year = item.item.year,
+                                    type = item.item.mediaType,
+                                    status = item.myStatus,
+                                    onClick = { onOpenItem(item.item.id) },
+                                )
+                            }
                         }
                     }
                 }
@@ -270,4 +324,5 @@ private fun BacklogItemRow(item: ListItem, onClick: () -> Unit) {
         }
     }
 }
+
 

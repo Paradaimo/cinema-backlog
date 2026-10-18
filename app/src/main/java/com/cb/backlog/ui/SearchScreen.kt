@@ -1,9 +1,10 @@
 ﻿package com.cb.backlog.ui
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -12,6 +13,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items as gridItems
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -38,6 +43,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -51,8 +57,13 @@ import com.cb.backlog.data.MediaInfo
 import com.cb.backlog.data.SupabaseRepo
 import com.cb.backlog.data.WatchStatus
 import com.cb.backlog.di.AppContainer
+import com.cb.backlog.ui.components.GridPosterCard
+import com.cb.backlog.ui.components.MediaTitleRow
 import com.cb.backlog.ui.components.PosterThumb
 import com.cb.backlog.ui.components.TypeBadge
+import com.cb.backlog.ui.components.ViewMode
+import com.cb.backlog.ui.components.ViewModePicker
+import com.cb.backlog.ui.components.ViewModeStore
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -160,6 +171,8 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
         SearchViewModel(container.catalogRepository, container.supabaseRepo)
     }
     var query by rememberSaveable { mutableStateOf("") }
+    val context = LocalContext.current
+    var viewMode by remember { mutableStateOf(ViewModeStore.load(context, "search")) }
     val mode by viewModel.mode.collectAsStateWithLifecycle()
     val results by viewModel.results.collectAsStateWithLifecycle()
     val searching by viewModel.searching.collectAsStateWithLifecycle()
@@ -203,6 +216,12 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
                     )
                 }
             }
+            Spacer(Modifier.height(6.dp))
+            ViewModePicker(
+                current = viewMode,
+                onChange = { viewMode = it; ViewModeStore.save(context, "search", it) },
+            )
+            Spacer(Modifier.height(6.dp))
             addedTitle?.let {
                 Spacer(Modifier.height(8.dp))
                 Text("Добавлено: $it", color = MaterialTheme.colorScheme.primary)
@@ -218,13 +237,44 @@ fun SearchScreen(container: AppContainer, onBack: () -> Unit) {
                     Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center
                 ) { CircularProgressIndicator() }
             } else {
-                LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(results, key = { it.source + it.externalId }) { info ->
-                        SearchResultRow(
-                            info = info,
-                            onAdd = { s -> viewModel.add(info, s) },
-                            onOpen = { viewModel.openPreview(info) },
-                        )
+                when (viewMode) {
+                    ViewMode.TITLES -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(results, key = { it.source + it.externalId }) { info ->
+                            MediaTitleRow(
+                                title = info.title,
+                                year = info.year,
+                                status = null,
+                                onClick = { viewModel.openPreview(info) },
+                            )
+                        }
+                    }
+
+                    ViewMode.LIST -> LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        items(results, key = { it.source + it.externalId }) { info ->
+                            SearchResultRow(
+                                info = info,
+                                onAdd = { s -> viewModel.add(info, s) },
+                                onOpen = { viewModel.openPreview(info) },
+                            )
+                        }
+                    }
+
+                    ViewMode.GRID -> LazyVerticalGrid(
+                        columns = GridCells.Fixed(3),
+                        state = rememberLazyGridState(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        gridItems(results, key = { it.source + it.externalId }) { info ->
+                            GridPosterCard(
+                                title = info.title,
+                                posterUrl = info.posterUrl,
+                                year = info.year,
+                                type = info.type,
+                                status = null,
+                                onClick = { viewModel.openPreview(info) },
+                            )
+                        }
                     }
                 }
             }
