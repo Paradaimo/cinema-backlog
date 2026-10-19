@@ -23,12 +23,17 @@ class CatalogRepository(
 
     suspend fun searchAnime(query: String): List<MediaInfo> =
         try {
-            shikimori.search(query).map { it.toMediaInfo() }
+            // Кинопоиск ищет аниме по-русски (тип anime в выдаче маппится в MediaType.ANIME)
+            kp.search(query).docs.map { it.toMediaInfo() }
         } catch (e: Exception) {
             try {
-                jikan.searchAnime(query).data.map { it.toMediaInfo() }
+                shikimori.search(query).map { it.toMediaInfo() }
             } catch (e2: Exception) {
-                kitsu.searchAnime(query).data.map { it.toMediaInfo() }
+                try {
+                    jikan.searchAnime(query).data.map { it.toMediaInfo() }
+                } catch (e3: Exception) {
+                    kitsu.searchAnime(query).data.map { it.toMediaInfo() }
+                }
             }
         }
 
