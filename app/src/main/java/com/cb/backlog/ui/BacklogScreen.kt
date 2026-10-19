@@ -19,11 +19,14 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,6 +47,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +55,7 @@ import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -299,6 +304,26 @@ fun BacklogScreen(
             }
 
             Spacer(Modifier.height(4.dp))
+            var searchQuery by rememberSaveable { mutableStateOf("") }
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Поиск по названию") },
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Default.Close, contentDescription = "Очистить")
+                        }
+                    }
+                },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+            )
+            Spacer(Modifier.height(4.dp))
             ViewModePicker(
                 current = viewMode,
                 onChange = { viewMode = it; ViewModeStore.save(context, "backlog", it) },
@@ -358,7 +383,20 @@ fun BacklogScreen(
                 else -> {
                     val items = data!!.items
                         .filter { statusFilter == null || it.myStatus == statusFilter }
-                    when (viewMode) {
+                        .filter { searchQuery.isBlank() || it.item.title.contains(searchQuery.trim(), ignoreCase = true) }
+                    if (items.isEmpty()) {
+                        Column(
+                            Modifier
+                                .fillMaxSize()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Text("Ничего не найдено по запросу «${searchQuery.trim()}»")
+                            Spacer(Modifier.height(8.dp))
+                            TextButton(onClick = { searchQuery = "" }) { Text("Сбросить поиск") }
+                        }
+                    } else when (viewMode) {
                         ViewMode.TITLES -> LazyColumn(state = rememberLazyListState()) {
                             items(items, key = { it.item.id }) { item ->
                                 MediaTitleRow(
