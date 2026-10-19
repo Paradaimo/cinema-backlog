@@ -61,6 +61,22 @@ class AppContainer(context: Context) {
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
 
+    private val shikimoriClient: OkHttpClient = okHttp.newBuilder()
+        .addInterceptor { chain ->
+            chain.proceed(
+                chain.request().newBuilder()
+                    .header("User-Agent", "CB-Backlog/0.3 (Android)")
+                    .build()
+            )
+        }
+        .build()
+
+    private val shikimoriRetrofit: Retrofit = Retrofit.Builder()
+        .baseUrl("https://shikimori.one/")
+        .client(shikimoriClient)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+
     private val jikanRetrofit: Retrofit = Retrofit.Builder()
         .baseUrl("https://api.jikan.moe/v4/")
         .client(okHttp)
@@ -75,6 +91,7 @@ class AppContainer(context: Context) {
 
     val catalogRepository = CatalogRepository(
         kp = kpRetrofit.create(com.cb.backlog.data.api.KpApi::class.java),
+        shikimori = shikimoriRetrofit.create(com.cb.backlog.data.api.ShikimoriApi::class.java),
         jikan = jikanRetrofit.create(JikanApi::class.java),
         kitsu = kitsuRetrofit.create(com.cb.backlog.data.api.KitsuApi::class.java),
     )

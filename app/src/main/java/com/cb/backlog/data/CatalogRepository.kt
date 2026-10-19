@@ -4,11 +4,15 @@ import com.cb.backlog.data.api.JikanApi
 import com.cb.backlog.data.api.KitsuItem
 import com.cb.backlog.data.api.KpApi
 import com.cb.backlog.data.api.KpMovie
+import com.cb.backlog.data.api.SHIKI_BASE
+import com.cb.backlog.data.api.ShikiAnime
+import com.cb.backlog.data.api.ShikimoriApi
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class CatalogRepository(
     private val kp: KpApi,
+    private val shikimori: ShikimoriApi,
     private val jikan: JikanApi,
     private val kitsu: com.cb.backlog.data.api.KitsuApi,
 ) {
@@ -19,26 +23,36 @@ class CatalogRepository(
 
     suspend fun searchAnime(query: String): List<MediaInfo> =
         try {
-            jikan.searchAnime(query).data.map { it.toMediaInfo() }
+            shikimori.search(query).map { it.toMediaInfo() }
         } catch (e: Exception) {
-            // Jikan недоступен (лежит/лимит) — пробуем Kitsu
-            kitsu.searchAnime(query).data.map { it.toMediaInfo() }
+            try {
+                jikan.searchAnime(query).data.map { it.toMediaInfo() }
+            } catch (e2: Exception) {
+                kitsu.searchAnime(query).data.map { it.toMediaInfo() }
+            }
         }
 
     suspend fun loadDetails(source: String, externalId: String, type: MediaType): MediaInfo =
         when (source) {
             SOURCE_KP -> loadKpDetails(externalId.toLong())
-            SOURCE_JIKAN -> jikan.animeFull(externalId.toLong()).data?.toMediaInfo()
-                ?: error("Аниме не найдено")
-            SOURCE_KITSU -> error("Детали ищите повторным поиском")
+            SOURCE_SHIKI, SOURCE_JIKAN -> loadAnimeDetails(externalId.toLong())
+            SOURCE_KITSU -> error("Детали недоступны для этого источника")
             else -> error("Неизвестный источник: $source")
         }
 
     private suspend fun loadKpDetails(id: Long): MediaInfo =
         kp.movieDetails(id).toMediaInfo()
 
+    private suspend fun loadAnimeDetails(id: Long): MediaInfo =
+        try {
+            shikimori.animeDetails(id).toMediaInfo()
+        } catch (e: Exception) {
+            jikan.animeFull(id).data?.toMediaInfo() ?: error("Аниме не найдено")
+        }
+
     companion object {
         const val SOURCE_KP = "kinopoisk"
+        const val SOURCE_SHIKI = "shikimori"
         const val SOURCE_JIKAN = "jikan"
         const val SOURCE_KITSU = "kitsu"
 
@@ -97,6 +111,26 @@ private fun com.cb.backlog.data.api.KitsuItem.toMediaInfo(): MediaInfo {
         synopsis = a?.synopsis ?: a?.description,
         year = year,
         director = null,
+        cast = emptyList(),
+    )
+}
+
+private fun ShikiAnime.toMediaInfo(): MediaInfo {
+    val cleanDescription = description
+        ?.replace(Regex("\\[[^\\]]*\\]"), "")
+        ?.replace(Regex("<br\\s*/?>"), "\n")
+        ?.trim()
+    val year = airedOn?.let { Regex("\\d{4}").find(it)?.value?.toIntOrNull() }
+    return MediaInfo(
+        source = CatalogRepository.SOURCE_SHIKI,
+        externalId = id.toString(),
+        type = MediaType.ANIME,
+        title = displayTitle,
+        posterUrl = image?.original?.let { SHIKI_BASE + it }
+            ?: image?.preview?.let { SHIKI_BASE + it },
+        synopsis = cleanDescription?.takeIf { it.isNotBlank() },
+        year = year,
+        director = studios.mapNotNull { it.name }.joinToString(", ").ifEmpty { null },
         cast = emptyList(),
     )
 }
