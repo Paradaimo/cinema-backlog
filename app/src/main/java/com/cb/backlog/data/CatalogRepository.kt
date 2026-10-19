@@ -1,13 +1,16 @@
 package com.cb.backlog.data
 
 import com.cb.backlog.data.api.JikanApi
+import com.cb.backlog.data.api.KitsuItem
 import com.cb.backlog.data.api.KpApi
 import com.cb.backlog.data.api.KpMovie
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 class CatalogRepository(
     private val kp: KpApi,
     private val jikan: JikanApi,
+    private val kitsu: com.cb.backlog.data.api.KitsuApi,
 ) {
 
     suspend fun searchMoviesAndShows(query: String): List<MediaInfo> =
@@ -15,13 +18,19 @@ class CatalogRepository(
             .map { it.toMediaInfo() }
 
     suspend fun searchAnime(query: String): List<MediaInfo> =
-        jikan.searchAnime(query).data.map { it.toMediaInfo() }
+        try {
+            jikan.searchAnime(query).data.map { it.toMediaInfo() }
+        } catch (e: Exception) {
+            // Jikan недоступен (лежит/лимит) — пробуем Kitsu
+            kitsu.searchAnime(query).data.map { it.toMediaInfo() }
+        }
 
     suspend fun loadDetails(source: String, externalId: String, type: MediaType): MediaInfo =
         when (source) {
             SOURCE_KP -> loadKpDetails(externalId.toLong())
             SOURCE_JIKAN -> jikan.animeFull(externalId.toLong()).data?.toMediaInfo()
                 ?: error("Аниме не найдено")
+            SOURCE_KITSU -> error("Детали ищите повторным поиском")
             else -> error("Неизвестный источник: $source")
         }
 
@@ -31,6 +40,7 @@ class CatalogRepository(
     companion object {
         const val SOURCE_KP = "kinopoisk"
         const val SOURCE_JIKAN = "jikan"
+        const val SOURCE_KITSU = "kitsu"
 
         fun castToJson(cast: List<String>): String = Json.encodeToString(cast)
     }
@@ -73,3 +83,20 @@ private fun com.cb.backlog.data.api.JikanAnime.toMediaInfo(): MediaInfo = MediaI
     director = studios.mapNotNull { it.name }.joinToString(", ").ifEmpty { null },
     cast = emptyList(),
 )
+
+private fun com.cb.backlog.data.api.KitsuItem.toMediaInfo(): MediaInfo {
+    val a = attributes
+    val year = a?.startDate?.take(4)?.toIntOrNull()
+    return MediaInfo(
+        source = CatalogRepository.SOURCE_KITSU,
+        externalId = id,
+        type = MediaType.ANIME,
+        title = a?.titles?.en ?: a?.titles?.enJp ?: a?.canonicalTitle ?: "",
+        posterUrl = a?.posterImage?.large ?: a?.posterImage?.original
+            ?: a?.posterImage?.medium ?: a?.posterImage?.small,
+        synopsis = a?.synopsis ?: a?.description,
+        year = year,
+        director = null,
+        cast = emptyList(),
+    )
+}

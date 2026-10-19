@@ -145,7 +145,7 @@ class SearchViewModel(
         viewModelScope.launch {
             error.value = null
             runCatching {
-                val full = if (info.synopsis == null) {
+                val full = if (info.synopsis == null && info.source != CatalogRepository.SOURCE_KITSU) {
                     catalog.loadDetails(info.source, info.externalId, info.type)
                 } else {
                     info

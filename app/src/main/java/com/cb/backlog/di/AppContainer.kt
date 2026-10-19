@@ -67,8 +67,15 @@ class AppContainer(context: Context) {
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
 
+    private val kitsuRetrofit: Retrofit = Retrofit.Builder()
+        .baseUrl("https://kitsu.io/api/edge/")
+        .client(okHttp)
+        .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
+        .build()
+
     val catalogRepository = CatalogRepository(
         kp = kpRetrofit.create(com.cb.backlog.data.api.KpApi::class.java),
         jikan = jikanRetrofit.create(JikanApi::class.java),
+        kitsu = kitsuRetrofit.create(com.cb.backlog.data.api.KitsuApi::class.java),
     )
 }
