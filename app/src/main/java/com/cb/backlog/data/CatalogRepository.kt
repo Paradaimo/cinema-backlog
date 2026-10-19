@@ -5,6 +5,7 @@ import com.cb.backlog.data.api.KitsuItem
 import com.cb.backlog.data.api.KpApi
 import com.cb.backlog.data.api.KpMovie
 import com.cb.backlog.data.api.SHIKI_BASE
+import com.cb.backlog.data.api.SHIKI_ME_BASE
 import com.cb.backlog.data.api.ShikiAnime
 import com.cb.backlog.data.api.ShikimoriApi
 import kotlinx.serialization.encodeToString
@@ -12,7 +13,8 @@ import kotlinx.serialization.json.Json
 
 class CatalogRepository(
     private val kp: KpApi,
-    private val shikimori: ShikimoriApi,
+    private val shikimoriOne: ShikimoriApi,
+    private val shikimoriMe: ShikimoriApi,
     private val jikan: JikanApi,
     private val kitsu: com.cb.backlog.data.api.KitsuApi,
 ) {
@@ -21,21 +23,27 @@ class CatalogRepository(
         kp.search(query).docs
             .map { it.toMediaInfo() }
 
-    suspend fun searchAnime(query: String): List<MediaInfo> =
-        try {
-            // Кинопоиск ищет аниме по-русски (тип anime в выдаче маппится в MediaType.ANIME)
-            kp.search(query).docs.map { it.toMediaInfo() }
-        } catch (e: Exception) {
+    suspend fun searchAnime(query: String): List<MediaInfo> {
+        val attempts: List<suspend () -> List<MediaInfo>> = listOf(
+            { shikimoriOne.search(query).map { it.toMediaInfo(SHIKI_BASE) } },
+            { shikimoriMe.search(query).map { it.toMediaInfo(SHIKI_ME_BASE) } },
+            { kp.search(query).docs.map { it.toMediaInfo() } },
+            { kitsu.searchAnime(query).data.map { it.toMediaInfo() } },
+        )
+        var lastError: Exception? = null
+        var anySuccess = false
+        for (attempt in attempts) {
             try {
-                shikimori.search(query).map { it.toMediaInfo() }
-            } catch (e2: Exception) {
-                try {
-                    jikan.searchAnime(query).data.map { it.toMediaInfo() }
-                } catch (e3: Exception) {
-                    kitsu.searchAnime(query).data.map { it.toMediaInfo() }
-                }
+                val res = attempt()
+                anySuccess = true
+                if (res.isNotEmpty()) return res
+            } catch (e: Exception) {
+                lastError = e
             }
         }
+        if (anySuccess) return emptyList()
+        throw lastError ?: IllegalStateException("Аниме-поиск недоступен")
+    }
 
     suspend fun loadDetails(source: String, externalId: String, type: MediaType): MediaInfo =
         when (source) {
@@ -48,12 +56,15 @@ class CatalogRepository(
     private suspend fun loadKpDetails(id: Long): MediaInfo =
         kp.movieDetails(id).toMediaInfo()
 
-    private suspend fun loadAnimeDetails(id: Long): MediaInfo =
+    private suspend fun loadAnimeDetails(id: Long): MediaInfo {
         try {
-            shikimori.animeDetails(id).toMediaInfo()
-        } catch (e: Exception) {
-            jikan.animeFull(id).data?.toMediaInfo() ?: error("Аниме не найдено")
-        }
+            return shikimoriOne.animeDetails(id).toMediaInfo(SHIKI_BASE)
+        } catch (e: Exception) { /* пробуем зеркала */ }
+        try {
+            return shikimoriMe.animeDetails(id).toMediaInfo(SHIKI_ME_BASE)
+        } catch (e: Exception) { /* пробуем jikan */ }
+        return jikan.animeFull(id).data?.toMediaInfo() ?: error("Аниме не найдено")
+    }
 
     companion object {
         const val SOURCE_KP = "kinopoisk"
@@ -120,7 +131,7 @@ private fun com.cb.backlog.data.api.KitsuItem.toMediaInfo(): MediaInfo {
     )
 }
 
-private fun ShikiAnime.toMediaInfo(): MediaInfo {
+private fun ShikiAnime.toMediaInfo(base: String): MediaInfo {
     val cleanDescription = description
         ?.replace(Regex("\\[[^\\]]*\\]"), "")
         ?.replace(Regex("<br\\s*/?>"), "\n")
@@ -131,8 +142,8 @@ private fun ShikiAnime.toMediaInfo(): MediaInfo {
         externalId = id.toString(),
         type = MediaType.ANIME,
         title = displayTitle,
-        posterUrl = image?.original?.let { SHIKI_BASE + it }
-            ?: image?.preview?.let { SHIKI_BASE + it },
+        posterUrl = image?.original?.let { base + it }
+            ?: image?.preview?.let { base + it },
         synopsis = cleanDescription?.takeIf { it.isNotBlank() },
         year = year,
         director = studios.mapNotNull { it.name }.joinToString(", ").ifEmpty { null },

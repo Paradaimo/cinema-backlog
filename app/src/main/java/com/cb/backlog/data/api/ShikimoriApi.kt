@@ -7,6 +7,7 @@ import retrofit2.http.Path
 import retrofit2.http.Query
 
 const val SHIKI_BASE = "https://shikimori.one"
+const val SHIKI_ME_BASE = "https://shikimori.me"
 
 @Serializable
 data class ShikiAnime(

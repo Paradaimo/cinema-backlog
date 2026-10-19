@@ -62,17 +62,26 @@ class AppContainer(context: Context) {
         .build()
 
     private val shikimoriClient: OkHttpClient = okHttp.newBuilder()
+        .connectTimeout(8, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .dns(object : okhttp3.Dns {
+            // IPv4 only: на мобильных сетях IPv6-коннекты часто висят до таймаута
+            override fun lookup(hostname: String): List<java.net.InetAddress> =
+                java.net.InetAddress.getAllByName(hostname).toList()
+                    .filter { it is java.net.Inet4Address }
+        })
         .addInterceptor { chain ->
             chain.proceed(
                 chain.request().newBuilder()
                     .header("User-Agent", "CB-Backlog/0.3 (Android)")
+                    .header("Accept", "application/json")
                     .build()
             )
         }
         .build()
 
-    private val shikimoriRetrofit: Retrofit = Retrofit.Builder()
-        .baseUrl("https://shikimori.one/")
+    private fun shikimoriRetrofit(baseUrl: String): Retrofit = Retrofit.Builder()
+        .baseUrl(baseUrl)
         .client(shikimoriClient)
         .addConverterFactory(json.asConverterFactory("application/json".toMediaType()))
         .build()
@@ -91,7 +100,10 @@ class AppContainer(context: Context) {
 
     val catalogRepository = CatalogRepository(
         kp = kpRetrofit.create(com.cb.backlog.data.api.KpApi::class.java),
-        shikimori = shikimoriRetrofit.create(com.cb.backlog.data.api.ShikimoriApi::class.java),
+        shikimoriOne = shikimoriRetrofit("https://shikimori.one/")
+            .create(com.cb.backlog.data.api.ShikimoriApi::class.java),
+        shikimoriMe = shikimoriRetrofit("https://shikimori.me/")
+            .create(com.cb.backlog.data.api.ShikimoriApi::class.java),
         jikan = jikanRetrofit.create(JikanApi::class.java),
         kitsu = kitsuRetrofit.create(com.cb.backlog.data.api.KitsuApi::class.java),
     )
