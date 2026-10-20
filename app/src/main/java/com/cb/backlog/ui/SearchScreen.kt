@@ -109,6 +109,8 @@ class SearchViewModel(
                 searchJob?.cancel()
                 if (q.isBlank()) {
                     results.value = emptyList()
+                    searching.value = false
+                    error.value = null
                     return@collect
                 }
                 searchJob = launch {
@@ -130,15 +132,19 @@ class SearchViewModel(
     private suspend fun search(q: String) {
         searching.value = true
         error.value = null
-        runCatching {
+        try {
             results.value = when (mode.value) {
                 SearchMode.VIDEO -> catalog.searchMoviesAndShows(q)
                 SearchMode.ANIME -> catalog.searchAnime(q)
             }
-        }.fold(
-            onSuccess = { searching.value = false },
-            onFailure = { e -> searching.value = false; error.value = "Ошибка поиска: ${e.message}" },
-        )
+            searching.value = false
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            // отмена из-за нового ввода — это не ошибка
+            throw e
+        } catch (e: Exception) {
+            searching.value = false
+            error.value = "Ошибка поиска: ${e.message}"
+        }
     }
 
     fun add(info: MediaInfo, status: WatchStatus? = null) {

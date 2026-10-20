@@ -62,8 +62,8 @@ class AppContainer(context: Context) {
         .build()
 
     private val shikimoriClient: OkHttpClient = okHttp.newBuilder()
-        .connectTimeout(8, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .dns(object : okhttp3.Dns {
             // IPv4 only: на мобильных сетях IPv6-коннекты часто висят до таймаута
             override fun lookup(hostname: String): List<java.net.InetAddress> =
